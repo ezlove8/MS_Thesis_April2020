@@ -1,0 +1,1513 @@
+---
+title: "Capstone Data Management"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+loding libraries
+```{r}
+library(tidyverse)
+library(data.table)
+library(stringi)
+library(tidyr)
+library(reshape2)
+library(ggplot2)
+library(gganimate)
+library(EnvStats)
+library(nlme)
+library(lme4)
+library(lmerTest)
+library(varhandle)
+library(sjstats)
+library(geepack)
+library(cowplot)
+library(plotly)
+library(dotwhisker)
+library(sjPlot)
+library(sjlabelled)
+library(sjmisc)
+```
+
+
+
+Reading in data
+```{r}
+
+#demographics
+df.07_08 <- fread('07_08.txt', header = T)  %>% subset(MSTATE07 == 'PA')
+df.08_09 <- fread('08_09.txt', header = T)  %>% subset(MSTATE08 == 'PA')
+df.09_10 <- fread('09_10.txt', header = T)  %>% subset(MSTATE09 == 'PA')
+df.10_11 <- fread('10_11.txt', header = T)  %>% subset(MSTATE == 'PA')
+df.11_12 <- fread('11_12.txt', header = T)  %>% subset(MSTATE == 'PA')
+df.12_13 <- fread('12_13.txt', header = T)  %>% subset(MSTATE == 'PA')
+df.13_14 <- fread('13_14.txt', header = T)  %>% subset(MSTATE == 'PA')
+df.14_15 <- read.delim('14_15.txt', header = T)  %>% subset(STATENAME == 'PENNSYLVANIA')
+df.15_16 <- fread('15_16.csv', header = T) %>% subset(STABR == 'PA') 
+df.16_17 <- fread('16_17.csv', header = T) %>% subset(STATENAME == 'PENNSYLVANIA') 
+df.17_18 <- fread('17_18.csv', header = T) %>% subset(STATENAME == 'PENNSYLVANIA')
+
+#graduation data
+grad_07_08 <- fread("grad_07_08.csv")
+grad_08_09 <- fread("grad_08_09.csv")
+grad_09_10 <- fread("grad_09_10.csv")
+grad_10_11 <- fread("grad_10_11.csv")
+grad_11_12<- fread("grad_11_12.csv")
+grad_12_13<- fread("grad_12_13.csv")
+grad_13_14 <- fread("grad_13_14.csv")
+grad_14_15 <- fread("grad_14_15.csv")
+grad_15_16 <- fread("grad_15_16.csv")
+
+```
+
+Aggregating Demographic Data
+```{r}
+#07,08,09 need to remove suffix 
+year <- c('07','08','09')
+k=1
+col_name_list=list(NA, NA, NA)
+for (i in list(df.07_08,df.08_09,df.09_10)){
+  col_name <- colnames(i)
+  for (j in 1:length(colnames(i))){
+    if (stri_sub(col_name[j], -2, -1)==year[k]){
+      col_name[j] <- stri_sub(col_name[j],from = 1, to = -3)
+    }else{
+      col_name[j] <- col_name[j]
+    } 
+  }
+  col_name_list[[k]]<- as.vector(rep(NA, times = length(col_name)))
+  col_name_list[[k]] <- col_name
+  k <- k+1
+}
+colnames(df.07_08) <- col_name_list[[1]]
+colnames(df.08_09) <- col_name_list[[2]]
+colnames(df.09_10) <- col_name_list[[3]]
+#suffix removed
+
+
+
+
+#adding survey year to 08/09 and 09/10
+df.08_09$SURVYEAR <- 2008
+df.09_10$SURVYEAR <- 2009
+
+#fixing some survey years
+df.14_15$SURVYEAR <- 2014
+df.15_16$SURVYEAR <-2015
+
+df.14_15$SURVYEAR <- as.numeric(df.14_15$SURVYEAR)
+df.15_16$SURVYEAR <- as.numeric(df.15_16$SURVYEAR)
+
+#fixing NCESSCH in 14_15
+df.14_15$NCESSCH <- as.integer(df.14_15$NCESSCH)
+
+#fixing colnames to match in 2014/2015
+df.14_15$SCHNAM <- toupper(df.14_15$SCH_NAME)
+df.14_15$SCHNO  <- df.14_15$SCHID
+df.14_15$LEANM <- df.14_15$LEA_NAME
+df.14_15$SEASCH <- df.14_15$ST_SCHID
+df.14_15$STID <- df.14_15$ST_LEAID
+
+
+df.15_16$SCHNAM <- toupper(df.15_16$SCH_NAME)
+df.15_16$SCHNO  <- df.15_16$SCHID
+df.15_16$LEANM <- df.15_16$LEA_NAME
+df.15_16$SEASCH <- df.15_16$ST_SCHID
+df.15_16$STID <- df.15_16$ST_LEAID
+
+#matching all colnames 
+keep <- colnames(df.08_09)
+
+for( i in keep[-which(keep %in% colnames(df.09_10))]){
+  df.09_10[,i] <- as.numeric(NA)
+}
+for( i in keep[-which(keep %in% colnames(df.10_11))]){
+  df.10_11[,i] <- as.numeric(NA)
+}
+for( i in keep[-which(keep %in% colnames(df.11_12))]){
+  df.11_12[,i] <- as.numeric(NA)
+}
+for( i in keep[-which(keep %in% colnames(df.12_13))]){
+  df.12_13[,i] <- as.numeric(NA)
+}
+for( i in keep[-which(keep %in% colnames(df.13_14))]){
+  df.13_14[,i] <-as.numeric(NA)
+}
+
+for( i in keep[-which(keep %in% colnames(df.14_15))]){
+  df.14_15[,i] <- as.numeric(NA)
+}
+
+
+for( i in keep[-which(keep %in% colnames(df.15_16))]){
+  df.15_16[,i] <- as.numeric(NA)
+}
+
+df.09_10.i <- as.data.frame(df.09_10)[,which(colnames(df.09_10) %in% keep)]
+df.09_10.i <- as.data.frame(df.09_10)[,which(colnames(df.09_10) %in% keep)]
+df.10_11.i <- as.data.frame(df.10_11)[,which(colnames(df.10_11) %in% keep)]
+df.11_12.i <- as.data.frame(df.11_12)[,which(colnames(df.11_12) %in% keep)]
+df.12_13.i <- as.data.frame(df.12_13)[,which(colnames(df.12_13) %in% keep)]
+df.13_14.i <- as.data.frame(df.13_14)[,which(colnames(df.13_14) %in% keep)]
+df.14_15.i <- as.data.frame(df.14_15)[,which(colnames(df.14_15) %in% keep)]
+df.15_16.i <- as.data.frame(df.15_16)[,which(colnames(df.15_16) %in% keep)]
+
+#turning LZIP to Numeric
+df.08_09$LZIP <- as.numeric(df.08_09$LZIP)
+df.08_09$LZIP4 <- as.numeric(df.08_09$LZIP4)
+
+df.09_10.i$LZIP <- as.numeric(df.09_10.i$LZIP)
+df.09_10.i$LZIP4 <- as.numeric(df.09_10.i$LZIP4)
+
+df.10_11.i$LZIP <- as.numeric(df.10_11.i$LZIP)
+df.10_11.i$LZIP4 <- as.numeric(df.10_11.i$LZIP4)
+
+df.11_12.i$LZIP <- as.numeric(df.11_12.i$LZIP)
+df.11_12.i$LZIP4 <- as.numeric(df.11_12.i$LZIP4)
+
+df.12_13.i$LZIP <- as.numeric(df.12_13.i$LZIP)
+df.12_13.i$LZIP4 <- as.numeric(df.12_13.i$LZIP4)
+
+df.13_14.i$LZIP <- as.numeric(df.13_14.i$LZIP)
+df.13_14.i$LZIP4 <- as.numeric(df.13_14.i$LZIP4)
+
+df.14_15.i$LZIP <- as.numeric(df.14_15.i$LZIP)
+df.14_15.i$LZIP4 <- as.numeric(df.14_15.i$LZIP4)
+
+df.15_16.i$LZIP <- as.numeric(df.15_16.i$LZIP)
+df.15_16.i$LZIP4 <- as.numeric(df.15_16.i$LZIP4)
+
+
+
+df.overall <- as.data.frame(df.08_09) %>% 
+  bind_rows(.,df.09_10.i) %>%
+  bind_rows(.,df.10_11.i) %>%
+  bind_rows(.,df.11_12.i) %>%
+  bind_rows(.,df.12_13.i) %>%
+  bind_rows(.,df.13_14.i) %>%
+  bind_rows(.,df.14_15.i) %>%
+  bind_rows(.,df.15_16.i)
+
+#290 x 25627
+
+
+```
+
+
+Preparing DF overall
+```{r}
+df.hs <- df.overall
+df.hs <- df.overall[df.overall$GSHI == '12' | df.overall$GSHI == 'N' | df.overall$GSHI == 'UG' |df.overall$SURVYEAR == 2014|df.overall$SURVYEAR == 2015,] ###########3 11031 x 290
+#df.hs <- merge(x = df.overall, y = grad.overall, by = c('SCHNO','SURVYEAR') ) #3957624 x 309 
+#df.hs <- unique(df.hs)
+#changing negative values to missing
+for(j in 31:290){
+  for(i in 1:length(df.hs$NCESSCH)){
+    if(df.hs[i,j] < 0 & is.na(df.hs[i,j]) == FALSE){
+      df.hs[i,j] <- 0
+    }
+  }
+}
+
+#totaling m+f for each race/grade
+#G9
+df.hs$AM09 <- df.hs$AM09F + df.hs$AM09M
+df.hs$AS09 <- df.hs$AS09F + df.hs$AS09M
+df.hs$HI09 <- df.hs$HI09F + df.hs$HI09M
+df.hs$BL09 <- df.hs$BL09F + df.hs$BL09M
+df.hs$WH09 <- df.hs$WH09F + df.hs$WH09M
+df.hs$HP09 <- df.hs$HP09F + df.hs$HP09M
+df.hs$TR09 <- df.hs$TR09F + df.hs$TR09M
+df.hs$HUG09 <- df.hs$AM09 + df.hs$HI09 + df.hs$BL09 + df.hs$HP09
+
+#G10
+df.hs$AM10 <- df.hs$AM10F + df.hs$AM10M
+df.hs$AS10 <- df.hs$AS10F + df.hs$AS10M
+df.hs$HI10 <- df.hs$HI10F + df.hs$HI10M
+df.hs$BL10 <- df.hs$BL10F + df.hs$BL10M
+df.hs$WH10 <- df.hs$WH10F + df.hs$WH10M
+df.hs$HP10 <- df.hs$HP10F + df.hs$HP10M
+df.hs$TR10 <- df.hs$TR10F + df.hs$TR10M
+df.hs$HUG10 <- df.hs$AM10 + df.hs$HI10 + df.hs$BL10 + df.hs$HP10
+
+#G11
+df.hs$AM11 <- df.hs$AM11F + df.hs$AM11M
+df.hs$AS11 <- df.hs$AS11F + df.hs$AS11M
+df.hs$HI11 <- df.hs$HI11F + df.hs$HI11M
+df.hs$BL11 <- df.hs$BL11F + df.hs$BL11M
+df.hs$WH11 <- df.hs$WH11F + df.hs$WH11M
+df.hs$HP11 <- df.hs$HP11F + df.hs$HP11M
+df.hs$TR11 <- df.hs$TR11F + df.hs$TR11M
+df.hs$HUG11 <- df.hs$AM11 + df.hs$HI11 + df.hs$BL11 + df.hs$HP11
+
+#G12
+df.hs$AM12 <- df.hs$AM12F + df.hs$AM12M
+df.hs$AS12 <- df.hs$AS12F + df.hs$AS12M
+df.hs$HI12 <- df.hs$HI12F + df.hs$HI12M
+df.hs$BL12 <- df.hs$BL12F + df.hs$BL12M
+df.hs$WH12 <- df.hs$WH12F + df.hs$WH12M
+df.hs$HP12 <- df.hs$HP12F + df.hs$HP12M
+df.hs$TR12 <- df.hs$TR12F + df.hs$TR12M
+df.hs$HUG12 <- df.hs$AM12 + df.hs$HI12 + df.hs$BL12 + df.hs$HP12
+
+#adding all race categories
+df.hs$AM_all <- df.hs$AM09 + df.hs$AM10 + df.hs$AM11 + df.hs$AM12
+df.hs$AS_all <- df.hs$AS09 + df.hs$AS10 + df.hs$AS11 + df.hs$AS12
+df.hs$HI_all <- df.hs$HI09 + df.hs$HI10 + df.hs$HI11 + df.hs$HI12
+df.hs$BL_all <- df.hs$BL09 + df.hs$BL10 + df.hs$BL11 + df.hs$BL12
+df.hs$WH_all <- df.hs$WH09 + df.hs$WH10 + df.hs$WH11 + df.hs$WH12
+df.hs$HP_all <- df.hs$HP09 + df.hs$HP10 + df.hs$HP11 + df.hs$HP12
+df.hs$TR_all <- df.hs$TR09 + df.hs$TR10 + df.hs$TR11 + df.hs$TR12
+
+#addng all hug
+df.hs$HUG_all <- df.hs$HUG09 + df.hs$HUG10 + df.hs$HUG11 + df.hs$HUG12
+df.hs$HS_all <- df.hs$G09 + df.hs$G10 + df.hs$G11 + df.hs$G12
+df.hs$HS_all_noNA <- df.hs$AM_all + df.hs$AS_all + df.hs$HI_all + df.hs$BL_all + df.hs$WH_all + df.hs$HP_all + df.hs$TR_all
+df.hs$HUG_prop <- df.hs$HUG_all/df.hs$HS_all_noNA
+df.hs <- as.data.table(df.hs)
+
+#adding title I status as of 2013 and 2009
+#df.hs <- merge(x = df.hs , y = cbind.data.frame(SEASCH = df.hs$SEASCH[which(df.hs$SURVYEAR == 2013)], TITLEI_2013 = df.hs$TITLEI[which(df.hs$SURVYEAR == 2013)]), by = 'SEASCH', all.x = T)
+
+#adding proportions of all races
+df.hs$AM_all.p <- df.hs$AM_all/df.hs$HS_all_noNA
+df.hs$AS_all.p <- df.hs$AS_all/df.hs$HS_all_noNA
+df.hs$HI_all.p <- df.hs$HI_all/df.hs$HS_all_noNA
+df.hs$BL_all.p <- df.hs$BL_all/df.hs$HS_all_noNA
+df.hs$WH_all.p <- df.hs$WH_all/df.hs$HS_all_noNA
+df.hs$HP_all.p <- df.hs$HP_all/df.hs$HS_all_noNA
+df.hs$TR_all.p <- df.hs$TR_all/df.hs$HS_all_noNA
+
+#adding all 12th graders
+df.hs$all_G12 <- df.hs$AM12 + df.hs$AS12 + df.hs$HI12 + df.hs$BL12 + df.hs$WH12 + df.hs$HP12 + df.hs$TR12
+
+```
+
+Preparing Graduation Data
+```{r}
+#adding Survey Year
+grad_07_08$SURVYEAR <- 2007
+grad_08_09$SURVYEAR <- 2008
+grad_09_10$SURVYEAR <- 2009
+grad_10_11$SURVYEAR <- 2010
+grad_11_12$SURVYEAR <- 2011
+grad_12_13$SURVYEAR <- 2012
+grad_13_14$SURVYEAR <- 2013
+grad_14_15$SURVYEAR <- 2014
+grad_15_16$SURVYEAR <- 2015
+
+
+#adding school number to 14/15 and 15/16
+grad_14_15$`School Number` <- grad_14_15$`School Code`
+grad_15_16$`School Number` <- grad_15_16$`School Code`
+
+#fixing title of some columns in 14_15/15_16
+
+names(grad_14_15)[names(grad_14_15) %in% c('Graduate Count', 
+                                           'Total College Bound %',
+                                           'College Bound',
+                                           '2- Or 4-Year University %',
+                                           'Specialized Associate Degree Granting Institution',
+                                           'Specialized Assocate Degree Granting Institution %')] <- c('Total Graduates',
+                                                                                                      'Total College-Bound',
+                                                                                                      'Total College-Bound %',
+                                                                                                      '2- or 4-Year College or University %',
+                                                                                                      'Specialized Associate Degree-Granting Institution',
+                                                                                                      'Specialized Associate Degree-Granting Institution %')
+names(grad_15_16)[names(grad_15_16) %in% c('Graduate Count', 
+                                           'Total College Bound %',
+                                           'College Bound',
+                                           '2- Or 4-Year University %',
+                                           'Specialized Associate Degree Granting Institution',
+                                           'Specialized Assocate Degree Granting Institution %')] <- c('Total Graduates',
+                                                                                                      'Total College-Bound',
+                                                                                                      'Total College-Bound %',
+                                                                                                      '2- or 4-Year College or University %',
+                                                                                                      'Specialized Associate Degree-Granting Institution',
+                                                                                                      'Specialized Associate Degree-Granting Institution %')
+
+#names(grad_15_16)[names(grad_15_16) %in% c('Total College Bound %','College Bound')] <- c('Total College-Bound','Total College-Bound %')
+
+#fixing columns to be the same 
+grad_07_08.i <- grad_07_08[,4:17]
+grad_08_09.i <- grad_08_09[,5:18]
+grad_09_10.i <- grad_09_10[,5:18]
+grad_10_11.i <- grad_10_11[,5:18]
+grad_11_12.i <- grad_11_12[,5:18]
+grad_12_13.i <- grad_12_13[,5:18]
+grad_13_14.i <- grad_13_14[,5:18]
+grad_14_15.i <- grad_14_15[,5:18]
+grad_15_16.i <- grad_15_16[,5:18]
+
+#fixing some columns in some table so data types agree
+grad_13_14.i$`Total College-Bound %` <- as.character(grad_13_14.i$`Total College-Bound %`)
+grad_13_14.i$`2- or 4-Year College or University %` <- as.character(grad_13_14.i$`2- or 4-Year College or University %`)
+grad_13_14.i$`Total Postsecondary Bound %` <- as.character(grad_13_14.i$`Total Postsecondary Bound %`)
+grad_13_14.i$`Non-Degree-Granting Postsecondary School %`<- as.character(grad_13_14.i$`Non-Degree-Granting Postsecondary School %`)
+grad_13_14.i$`Specialized Associate Degree-Granting Institution %`<- as.character(grad_13_14.i$`Specialized Associate Degree-Granting Institution %`)
+
+
+#unioning all 
+grad.overall <- grad_08_09.i %>% 
+  bind_rows(., grad_09_10.i) %>%
+  bind_rows(., grad_10_11.i) %>%
+  bind_rows(., grad_11_12.i) %>%
+  bind_rows(., grad_12_13.i) %>%
+  bind_rows(., grad_13_14.i) %>%
+  bind_rows(., grad_14_15.i) %>%
+  bind_rows(., grad_15_16.i)
+
+#8674 x 20
+grad.overall$SCHNO <- grad.overall$`School Number`
+```
+
+bringing outcomes and predictors together
+```{r}
+grad.overall$SCHNAM = toupper(grad.overall$School)
+df.hs$SCHNAM <- toupper(df.hs$SCHNAM)
+df.hs$SURVYEAR = as.factor(df.hs$SURVYEAR)
+grad.overall$SURVYEAR = as.factor(grad.overall$SURVYEAR)
+
+df.xynam <- merge(x = df.hs, y = grad.overall, by = c('SCHNAM','SURVYEAR') ) #5456
+df.xynum <- merge(x = df.hs, y = grad.overall, by = c('SCHNO','SURVYEAR') ) #4364
+
+df.xynam <- df.xynam[,-"SCHNO.y"]
+names(df.xynam)[names(df.xynam) == "SCHNO.x"] <- "SCHNO"
+
+df.xynum <- df.xynum[,-"SCHNAM.y"]
+names(df.xynum)[names(df.xynum) == "SCHNAM.x"] <- "SCHNAM"
+
+df.xy <- union(df.xynam, df.xynum) #5565
+ df.xy <-df.xy[,-333] # get rid of after fresh run 
+```  
+
+Preparing data
+```{r}
+#converting data to numeric that should be
+#percents
+df.xy$college_bound.p <- as.numeric(sub('%', '',df.xy$`Total College-Bound %`)) 
+df.xy$college_bound <- as.numeric(df.xy$`Total College-Bound`)
+
+df.xy$nondegree_bound.p <- as.numeric(sub('%', '',df.xy$`Non-Degree-Granting Postsecondary School %`)) 
+df.xy$nondegree_bound <- as.numeric(df.xy$`Non-Degree-Granting Postsecondary School`)
+
+df.xy$total_postsecondary_bound.p <- as.numeric(sub('%', '',df.xy$`Total Postsecondary Bound %`)) 
+df.xy$total_postsecondary_bound <- as.numeric(df.xy$`Total Postsecondary Bound`)
+
+df.xy$specialized_degree_bound.p <- as.numeric(sub('%', '',df.xy$`Specialized Associate Degree-Granting Institution %`)) 
+df.xy$specialized_degree_bound <- as.numeric(df.xy$`Specialized Associate Degree-Granting Institution`)
+
+#creating charter variable
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2008],CHARTER_2008 = df.xy$CHARTR[df.xy$SURVYEAR==2008])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2009],CHARTER_2009 = df.xy$CHARTR[df.xy$SURVYEAR==2009])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2011],CHARTER_2011 = df.xy$CHARTR[df.xy$SURVYEAR==2011])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2013],CHARTER_2013 = df.xy$CHARTR[df.xy$SURVYEAR==2013])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2014],CHARTER_2014 = df.xy$CHARTR[df.xy$SURVYEAR==2014])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2015],CHARTER_2015 = df.xy$CHARTR[df.xy$SURVYEAR==2015])), by = 'SCHNO', all.x = T)
+
+#making an overall charter variable
+for(i in 1:length(df.xy$SCHNO)){
+  if(is.na(df.xy$CHARTER_2008[i])){
+    if(is.na(df.xy$CHARTER_2009[i])){
+      if(is.na(df.xy$CHARTER_2011[i])){
+        if(is.na(df.xy$CHARTER_2013[i])){
+          if(is.na(df.xy$CHARTER_2014[i])){
+            df.xy$CHARTER_OVERALL[i] <- df.xy$CHARTER_2015[i]
+            }
+              else{df.xy$CHARTER_OVERALL[i]<-df.xy$CHARTER_2014[i]}
+         }
+            else{df.xy$CHARTER_OVERALL[i] <- df.xy$CHARTER_2013[i]}
+       }
+        else{df.xy$CHARTER_OVERALL[i] <- df.xy$CHARTER_2011[i]}
+     }
+      else{df.xy$CHARTER_OVERALL[i] <- df.xy$CHARTER_2009[i]}
+    }
+    else{df.xy$CHARTER_OVERALL[i] <- df.xy$CHARTER_2008[i]}
+}
+
+for(i in 1:length(df.xy$SCHNO)){
+  if(is.na(df.xy$CHARTER_OVERALL[i])){
+    if(df.xy$SCHNAM[i] %like% "%CS%" | df.xy$SCHNAM[i] %like% "%CHARTER%"){
+    df.xy$CHARTER_OVERALL[i] <- 1
+    }
+    else(df.xy$CHARTER_OVERALL[i]<-2)
+  }
+}
+
+#creating TITLEI variable
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2008],TITLEI_2008 = df.xy$TITLEI[df.xy$SURVYEAR==2008])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2009],TITLEI_2009 = df.xy$TITLEI[df.xy$SURVYEAR==2009])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2011],TITLEI_2011 = df.xy$TITLEI[df.xy$SURVYEAR==2011])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2013],TITLEI_2013 = df.xy$TITLEI[df.xy$SURVYEAR==2013])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2014],TITLEI_2014 = df.xy$TITLEI[df.xy$SURVYEAR==2014])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2015],TITLEI_2015 = df.xy$TITLEI[df.xy$SURVYEAR==2015])), by = 'SCHNO', all.x = T)
+
+#making an overall TITLE I variable
+for(i in 1:length(df.xy$SCHNO)){
+  if(is.na(df.xy$TITLEI_2008[i])| df.xy$TITLEI_2008[i] == "N"){
+    if(is.na(df.xy$TITLEI_2009[i])| df.xy$TITLEI_2009[i] == "N"){
+      if(is.na(df.xy$TITLEI_2011[i])| df.xy$TITLEI_2011[i] == "N"){
+        if(is.na(df.xy$TITLEI_2013[i])| df.xy$TITLEI_2013[i] == "N"){
+          if(is.na(df.xy$TITLEI_2014[i])| df.xy$TITLEI_2014[i] == "N"){
+            df.xy$TITLEI_OVERALL[i] <- df.xy$TITLEI_2015[i]
+            }
+              else{df.xy$TITLEI_OVERALL[i]<-df.xy$TITLEI_2014[i]}
+         }
+            else{df.xy$TITLEI_OVERALL[i] <- df.xy$TITLEI_2013[i]}
+       }
+        else{df.xy$TITLEI_OVERALL[i] <- df.xy$TITLEI_2011[i]}
+     }
+      else{df.xy$TITLEI_OVERALL[i] <- df.xy$TITLEI_2009[i]}
+    }
+    else{df.xy$TITLEI_OVERALL[i] <- df.xy$TITLEI_2008[i]}
+}
+
+#creating School wide STITLI variable
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2008],STITLI_2008 = df.xy$STITLI[df.xy$SURVYEAR==2008])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2009],STITLI_2009 = df.xy$STITLI[df.xy$SURVYEAR==2009])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2011],STITLI_2011 = df.xy$STITLI[df.xy$SURVYEAR==2011])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2013],STITLI_2013 = df.xy$STITLI[df.xy$SURVYEAR==2013])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2014],STITLI_2014 = df.xy$STITLI[df.xy$SURVYEAR==2014])), by = 'SCHNO', all.x = T)
+
+df.xy <- merge(df.xy, y = unique(cbind.data.frame(SCHNO = df.xy$SCHNO[df.xy$SURVYEAR == 2015],STITLI_2015 = df.xy$STITLI[df.xy$SURVYEAR==2015])), by = 'SCHNO', all.x = T)
+
+#making an overall School-wide TITLE I variable
+for(i in 1:length(df.xy$SCHNO)){
+  if(is.na(df.xy$STITLI_2008[i])| df.xy$STITLI_2008[i] == "N" |df.xy$STITLI_2008[i] == "M"){
+    if(is.na(df.xy$STITLI_2009[i])| df.xy$STITLI_2009[i] == "N"|df.xy$STITLI_2009[i] == "M"){
+      if(is.na(df.xy$STITLI_2011[i])| df.xy$STITLI_2011[i] == "N"|df.xy$STITLI_2011[i] == "M"){
+        if(is.na(df.xy$STITLI_2013[i])| df.xy$STITLI_2013[i] == "N"|df.xy$STITLI_2013[i] == "M"){
+          if(is.na(df.xy$STITLI_2014[i])| df.xy$STITLI_2014[i] == "N"|df.xy$STITLI_2014[i] == "M"){
+            df.xy$STITLI_OVERALL[i] <- df.xy$STITLI_2015[i]
+            }
+              else{df.xy$STITLI_OVERALL[i]<-df.xy$STITLI_2014[i]}
+         }
+            else{df.xy$STITLI_OVERALL[i] <- df.xy$STITLI_2013[i]}
+       }
+        else{df.xy$STITLI_OVERALL[i] <- df.xy$STITLI_2011[i]}
+     }
+      else{df.xy$STITLI_OVERALL[i] <- df.xy$STITLI_2009[i]}
+    }
+    else{df.xy$STITLI_OVERALL[i] <- df.xy$STITLI_2008[i]}
+}
+#creating managable sub-data set for arm 1
+df.arm1 <- na.omit(df.xy[,c('SCHNAM',
+                    'SCHNO',
+                    'SURVYEAR',
+                    'HUG_prop',
+                    'TITLEI_OVERALL',
+                    'STITLI_OVERALL',
+                    'CHARTER_OVERALL',
+                    'college_bound.p',
+                    'nondegree_bound.p',
+                    'specialized_degree_bound.p',
+                    'total_postsecondary_bound.p')]) #4431
+length(unique(df.arm1$SCHNO)) #610
+
+df.arm1 <- unique(df.arm1[which(df.arm1$total_postsecondary_bound.p != 0),])
+df.arm1 <- unique(df.arm1[which(df.arm1$SCHNO != 16),])
+df.arm1 <- unique(df.arm1[which(df.arm1$SCHNO != 3848),])
+df.arm1 <- unique(df.arm1[which(df.arm1$SCHNO != 941),])
+df.arm1 <- unique(df.arm1[which(is.na(df.arm1$HUG_prop) != T),]) #4118
+
+length(unique(df.arm1$SCHNO)) #601
+
+#unfactoring SURVYEAR 
+df.arm1$SURVYEAR <- unfactor(df.arm1$SURVYEAR)
+#adding centered continuous features for polynomial models
+df.arm1$SURVYEAR.c <- df.arm1$SURVYEAR - mean(df.arm1$SURVYEAR)
+df.arm1$HUG_prop.c <- df.arm1$HUG_prop - mean(df.arm1$HUG_prop)
+
+#adding polynomial continuous features
+df.arm1$SURVYEAR.2 <- df.arm1$SURVYEAR.c^2
+df.arm1$SURVYEAR.3 <- df.arm1$SURVYEAR.c^3
+
+df.arm1$HUG_prop.2 <- df.arm1$HUG_prop.c^2
+df.arm1$HUG_prop.3 <- df.arm1$HUG_prop.c^3
+
+#making hug_prop a percent
+df.arm1$HUG_percent <- df.arm1$HUG_prop*100
+
+#creating functional data table with all variables of interest
+df.dev <- na.omit(df.xy[,c('SCHNO',
+                           'SCHNAM',
+                           'SURVYEAR',
+                           'Total Graduates', 
+                           'college_bound.p',
+                           'nondegree_bound.p',
+                           'specialized_degree_bound.p',
+                           "total_postsecondary_bound.p",
+                           'STITLI_OVERALL',
+                           "HUG_prop",
+                           'AM_all.p', 
+                           'AS_all.p',
+                           'HI_all.p',
+                           'BL_all.p',
+                           'WH_all.p',
+                           'HP_all.p', 
+                           'TR_all.p')]) #4431
+df.dev <- unique(df.dev[which(df.dev$total_postsecondary_bound.p != 0),]) #4170
+df.dev <- unique(df.dev[which(df.dev$SCHNO != 16),]) #4154
+df.dev <- unique(df.dev[which(df.dev$SCHNO != 3848),]) #4118
+df.dev <- unique(df.dev[which(df.dev$SCHNO != 941),])
+  
+#creating long forms of data
+df.dev.l <- melt(df.dev,
+        # ID variables - all the variables to keep but not split apart on
+    id.vars=c("SCHNAM", "SURVYEAR"),
+        # The source columns
+    measure.vars=c("AM_all.p", "AS_all.p", "HI_all.p","BL_all.p","WH_all.p","HP_all.p","TR_all.p", "HUG_prop", "college_bound.p", "total_postsecondary_bound.p", 'STITLI_OVERALL'),
+        # Name of the destination column that will identify the original
+        # column that the measurement came from
+    variable.name="Race",
+    value.name="Percent"
+  )#29078 x 4
+
+#long format just race
+df.dev.r <- melt(df.dev,
+        # ID variables - all the variables to keep but not split apart on
+    id.vars=c("SCHNAM", "SURVYEAR"),
+        # The source columns
+    measure.vars=c("AM_all.p", "AS_all.p", "HI_all.p","BL_all.p","WH_all.p","HP_all.p","TR_all.p"),
+        # Name of the destination column that will identify the original
+        # column that the measurement came from
+    variable.name="Race",
+    value.name="Percent"
+  )#29078 x 4
+
+#long form of outcomes
+df.arm1.ol <- melt(df.dev,
+        # ID variables - all the variables to keep but not split apart on
+    id.vars=c("SCHNAM", "SURVYEAR"),
+        # The source columns
+    measure.vars=c('total_postsecondary_bound.p', 'college_bound.p', 'specialized_degree_bound.p'),
+        # Name of the destination column that will identify the original
+        # column that the measurement came from
+    variable.name="Outcome",
+    value.name="Percent"
+  )#29078 x 4
+
+
+#maybe merging df.xy with total number of grads?
+df.dev <- merge(df.dev,df.hs[,c('SCHNO','SCHNAM','SURVYEAR','all_G12')], by = c('SCHNO','SURVYEAR','SCHNAM'),all.x = T) #4118
+df.dev <- merge(df.dev,df.xy[,c('SCHNO','SCHNAM','SURVYEAR','G12')], by = c('SCHNO','SURVYEAR','SCHNAM'),all.x = T) #4118
+```
+
+Data exploration
+```{r}
+
+summary(df.hs[,323:332])
+
+
+ggplot(data = df.hs)+
+  geom_bar(aes(x=factor(SURVYEAR), y = HUG_prop), stat = "summary", fun.y = "mean")+
+  theme_bw()
+
+ggplot(data = df.hs)+
+  geom_boxplot(aes(x=factor(SURVYEAR), y = HUG_prop))+
+  theme_bw()
+  
+ggplot(data = df.hs)+
+  geom_point(aes(x=HUG_prop, y = as.factor(TITLEI_2013)))+
+  theme_bw()
+
+#merging outcome long with phug and title I
+df.arm1.ol$SURVYEAR <- unfactor(df.arm1.ol$SURVYEAR)
+df.arm1.ol2 <- merge(df.arm1.ol, df.arm1[,c('SCHNAM','SURVYEAR','HUG_prop', 'STITLI_OVERALL')], by = c('SCHNAM','SURVYEAR'))
+df.arm1.ol2$Outcome <- factor(df.arm1.ol2$Outcome, levels = c("college_bound.p", "total_postsecondary_bound.p", "specialized_degree_bound.p"), 
+                  labels = c("College Bound", "Total Post-Secondary Bound", "Specialized Degree Bound"))
+#scatter plot of covariates vs outcome
+ggplot(data = df.arm1.ol2[which(df.arm1.ol2$Outcome != 'Specialized Degree Bound')])+
+  geom_point(aes(x=(HUG_prop*100),y=Percent, color = STITLI_OVERALL), alpha = 0.5)+
+  theme_bw()+
+  xlab('Percent HUG Student Population')+
+  ylab('Percent Graduates')+
+  scale_color_discrete(name = 'Title I Status',
+                       labels=c('1' = 'Yes', '2' = "No"))+
+  facet_wrap('Outcome')
+
+ggplot(data = df.arm1)+
+  geom_point(aes(x=HUG_prop,y=total_postsecondary_bound.p, color = STITLI_OVERALL))+
+  theme_bw()+
+  xlab('Proportion HUG Student Population')+
+  ylab('Percent Post-Secondary Bound Graduates')+
+  scale_color_discrete(name = 'Title Status',labels=c('1' = 'Yes', 
+                            '2' = "No"))+
+scale_color_manual(values=c("#E69F00", "#56B4E9"))+
+  ggtitle("Total Post-Secondary Bound")
+
+
+#scatter plot of college-bound rates
+ggplot(data = df.arm1)+
+  geom_point(aes(x=HUG_prop,y=college_bound.p, color = STITLI_OVERALL))+
+  theme_bw()+
+  transition_time(as.integer(SURVYEAR)) +
+   labs(title = "Year: {frame_time}")+
+   ease_aes('linear')
+  #ease_aes('cubic-in-out')
+
+p2 <- ggplot(data = ocdrug, aes(x = Tmnt, y = EE_Cmax, group = ID, colour = Seq)) +
+    mytheme +
+    coord_trans(y="log10", limy=c(100,700)) +
+    labs(list(title = "Cmax", y = paste("EE","n","pg/mL"))) + 
+    geom_line(size=1) + 
+    geom_text(data=subset(ocdrug, ID %in% c(2,20)), aes(Tmnt,EE_Cmax,label=ID)) +
+    theme(legend.position="none")
+
+#interaction plot
+interaction.plot(df.arm1$SURVYEAR,df.arm1$SCHNO, df.arm1$total_postsecondary_bound.p, xlab="Year", ylab="Total Post-Secondary College Bound", legend=F) 
+
+interaction.plot(df.arm1$SURVYEAR,df.arm1$SCHNO, df.arm1$college_bound.p, xlab="Year", ylab="Percent College Bound", legend=F) 
+
+interaction.plot(df.arm1$SURVYEAR,df.arm1$SCHNO, df.arm1$specialized_degree_bound.p, xlab="Year", ylab="Specialized Degree Bound", legend=F) 
+```
+Summary Stats
+```{r}
+
+#finding average obs per school
+obvs_by_school <- (aggregate(x = df.arm1, 
+                   by = list(unique.values = df.arm1$SCHNO), 
+                   FUN = length))
+table(obvs_by_school$SURVYEAR.c)
+prop.table(table(obvs_by_school$SURVYEAR.c))*100
+mean(obvs_by_school$SURVYEAR)
+
+#mean/variance of race
+mean(df.dev$AM_all.p)*100
+mean(df.dev$AS_all.p)*100
+mean(df.dev$HI_all.p)*100
+mean(df.dev$BL_all.p)*100
+mean(df.dev$WH_all.p)*100
+mean(df.dev$HP_all.p)*100
+mean(df.dev$TR_all.p)*100
+
+var(df.dev$AM_all.p*100)
+var(df.dev$AS_all.p*100)
+var(df.dev$HI_all.p*100)
+var(df.dev$BL_all.p*100)
+var(df.dev$WH_all.p*100)
+var(df.dev$HP_all.p*100)
+var(df.dev$TR_all.p*100)
+#table of TITLE I status by school
+uniq_titleI <- unique(df.arm1[,c('SCHNO','STITLI_OVERALL')])
+table(uniq_titleI$STITLI_OVERALL)
+prop.table(table(uniq_titleI$STITLI_OVERALL))*100
+
+#table of Charter School status by school
+uniq_charter <- unique(df.arm1[,c('SCHNO','CHARTER_OVERALL')])
+table(uniq_charter$CHARTER_OVERALL)
+prop.table(table(uniq_charter$CHARTER_OVERALL))*100
+
+#mean of outcomes
+mean(df.arm1$total_postsecondary_bound.p)
+mean(df.arm1$college_bound.p)
+mean(df.arm1$specialized_degree_bound.p)
+```
+
+Exploring Distribution of Race in schools (mean/variance)
+```{r}
+#overall mean and variance (grouped by year)
+ggplot(data = df.xyl)+
+  geom_bar(aes(x=Race, y=Percent, fill = SURVYEAR),
+           stat = "summary", fun.y = "mean", position = position_dodge())+
+  theme_bw()+
+  #theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4))+
+  ylab('Mean Percent')+
+  xlab('RACE')+
+  ggtitle('Mean Percents by Race')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))
+  
+  
+
+ggplot(data = df.xyl)+
+  geom_bar(aes(x=Race, y=Percent, fill = SURVYEAR),
+           stat = "summary", fun.y = "var",position = position_dodge())+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  ylab('Variance of Percent')+
+  xlab('RACE')+
+  ggtitle('Percent Variance by Race')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))
+
+  
+
+#overall mean and variance over all years
+ggplot(data = df.xyl)+
+  geom_bar(aes(x=Race, y=Percent),
+           stat = "summary", fun.y = "mean")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ylab('Mean Proportion')+
+  xlab('RACE')+
+  #ggtitle('Average Racial Distribution of Pennsylvania Public Schools from 2008 to 2016')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))
+
+
+ggplot(data = df.xyl)+
+  geom_bar(aes(x=Race, y=Percent),
+           stat = "summary", fun.y = "var")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  ylab('Variance of Proportion')+
+  xlab('RACE')+
+  #ggtitle('Variance of Racial Distribution of Pennsylvania Public Schools from 2008 to 2016')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))
+
+```
+
+Checking Features/Linear Model Assumptions
+```{r}
+#looking at percent HUG 
+ggplot(data = df.arm1)+
+  geom_histogram(aes(x=HUG_prop), col = 'white')+
+  theme_bw()+
+  xlab('Percent HUG')
+
+#looking at percent HUG by year
+ggplot(data = df.arm1)+
+  geom_histogram(aes(x=HUG_prop), col = 'white')+
+  theme_bw()+
+  facet_wrap('SURVYEAR')+
+  xlab('Percent HUG')
+
+
+#looking at total post secondary bound
+pb <- ggplot(data = df.arm1)+
+  geom_histogram(aes(x=total_postsecondary_bound.p), col = 'white')+
+  theme_bw()+
+  xlab('Percent Total Post-Secondary Bound')
+#over time
+ggplot(data = df.arm1)+
+  geom_histogram(aes(x=total_postsecondary_bound.p), col = 'white')+
+  theme_bw()+
+  xlab('Percent Total Post-Secondary Bound')+
+  facet_wrap('SURVYEAR')
+
+#boxplots
+pb.bp <- ggplot(data = df.arm1, aes( y = total_postsecondary_bound.p))+
+  geom_boxplot()+
+  theme_bw()+
+  ylab('Percent Total Post-Secondary Bound')
+
+cb <- ggplot(data = df.arm1)+
+  geom_histogram(aes(x= college_bound.p), col = 'white')+
+  theme_bw()+
+  xlab('Percent College Bound')
+
+cb.bp <- ggplot(data = df.arm1, aes( y = college_bound.p))+
+  geom_boxplot()+
+  theme_bw()+
+  ylab('Percent College Bound')
+
+
+plot_grid(pb, pb.bp, cb, cb.bp, nrow = 2, rel_widths = c(1,1,1,1))
+
+#using the long data
+levels(df.arm1.ol$Outcome) <- c('Total Post-Secondary Bound','College Bound', 'Specialized Degree Bound')
+ggplot(data = df.arm1.ol)+
+  geom_histogram(aes(x=Percent), col = 'white', binwidth = 5)+
+  theme_bw()+
+  facet_wrap('Outcome')
+
+ggplot(data = df.arm1.ol, aes( y = Percent))+
+  geom_boxplot()+
+  theme_bw()+
+  facet_wrap('Outcome')
+
+#pretty normal, nice!
+#looking at total college bound
+ggplot(data = df.arm1)+
+  geom_histogram(aes(x=college_bound.p), col = 'white')+
+  theme_bw()
+#also normal!
+#looking at specialized degree bound
+ggplot(data = df.arm1)+
+  geom_histogram(aes(x=specialized_degree_bound.p), col = 'white')+
+  theme_bw()
+#not normal, trying transfrom
+ggplot(data = df.arm1)+
+  geom_histogram(aes(x= sqrt(specialized_degree_bound.p+1)), col = 'white')+
+  theme_bw()
+
+#looking at charter status
+ggplot(data = df.arm1)+
+  geom_histogram(aes(x=CHARTER_OVERALL), col = 'white')+
+  theme_bw()
+
+
+#looking at School-wide Title I Status
+ggplot(data = df.arm1)+
+  geom_bar(aes(x=STITLI_OVERALL, stat = 'count'), col = 'white')+
+  theme_bw()
+  
+
+#interaction plot
+interaction.plot(df.arm1$SURVYEAR,df.arm1$SCHNO, df.arm1$total_postsecondary_bound.p, xlab="Year", ylab="Percent College Bound", legend=F)
+
+```
+
+Results Section I- Longitudinal and polynomial models
+```{r}
+xtabs(~ SCHNO + SURVYEAR, df.arm1)
+#need to get rid of SCHNO 16,3848
+
+#random int and rand effects model
+
+rm.college <- lmer(college_bound.p ~ HUG_prop + SURVYEAR +STITLI_OVERALL  +  (SURVYEAR|SCHNO), df.arm1, REML = 0)
+rm.total <- lmer(total_postsecondary_bound.p ~ HUG_prop + SURVYEAR +STITLI_OVERALL  +  (SURVYEAR|SCHNO), df.arm1, REML = 0)
+
+#polynomial models (quadratic)
+ri.college.2 <- lmer(college_bound.p ~ HUG_prop.c + HUG_prop.2 + SURVYEAR.c + SURVYEAR.2 +STITLI_OVERALL  + (1|SCHNO), df.arm1, REML = 0)
+
+ri.total.2 <- lmer(total_postsecondary_bound.p ~ HUG_prop.c + HUG_prop.2 + SURVYEAR.c + SURVYEAR.2 +STITLI_OVERALL  + (1|SCHNO), df.arm1, REML = 0)
+
+summary(rm.model)
+summary(ri.model)
+summary(rm.model.2)
+summary(ri.model.2)
+
+performance::icc(rm.model)
+performance::icc(ri.model)
+performance::icc(rm.model.2)
+performance::icc(ri.model.2)
+
+#setting no title I as reference
+df.arm1 <- within(df.arm1, STITLI_OVERALL <- relevel(factor(STITLI_OVERALL), ref = 2))
+
+#models for write-up
+ri.college <- lmer(college_bound.p ~ HUG_percent + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.arm1, REML = 0)
+
+ri.total <- lmer(total_postsecondary_bound.p ~ HUG_percent + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.arm1, REML = 0)
+
+summary(ri.college)
+summary(ri.total)
+confint(ri.college, method="profile", ## default
+                             oldNames = FALSE)
+confint(ri.total)
+
+
+#checking residuals
+#creating the residuals (epsilon.hat)
+resid <- residuals(ri.model)
+qqnorm(resid)
+
+#creating the standardized residual (std epsilon.hat)
+resid.std <- resid/sd(resid)
+plot(df.arm1$SCHNO, resid.std, ylim=c(-10, 10), ylab="std epsilon hat")
+abline(h=0)
+
+#homoskedacity plots
+plot(df.arm1$SURVYEAR, resid, ylim=c(-10, 10), ylab="epsilon.hat", 
+     xlab="AGE")
+abline(h=0)
+
+plot(df.arm1$STITLI_OVERALL, resid, ylim=c(-10, 10), ylab="epsilon.hat", 
+     xlab="AGE")
+abline(h=0)
+
+plot(df.arm1$HUG_prop, resid, ylim=c(-10, 10), ylab="epsilon.hat", 
+     xlab="AGE")
+abline(h=0)
+
+#plotting results
+dwplot(ri.total@frame)
+plot_model(ri.total, show.values = TRUE, vline.color = 'grey', title = 'Total Post-Secondary Bound')+theme_bw()
+dwplot(ri.college)
+plot_model(ri.college, show.values = TRUE, vline.color = 'grey', title = 'College Bound')+theme_bw()
+
+#LRT checking nested models
+#rand intercepts vs random effects
+anova(ri.total, rm.total, test = 'LRT')
+anova(ri.college, rm.college, test = 'LRT')
+#polynomial models vs ri models
+anova(ri.total, ri.total.2, test = 'LRT')
+anova(ri.college, ri.college.2, test = 'LRT')
+
+#Looking at change in 10pp HUG
+df.arm1$HUG_percent10 <- df.arm1$HUG_percent/10
+
+ri.college10 <- lmer(college_bound.p ~ HUG_percent10 + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.arm1, REML = 0)
+
+ri.total10 <- lmer(total_postsecondary_bound.p ~ HUG_percent10 + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.arm1, REML = 0)
+
+summary(ri.college10)
+summary(ri.total10)
+
+plot_model(ri.total10, show.values = TRUE, vline.color = 'grey', title = 'Total Post-Secondary Bound')+theme_bw()
+
+plot_model(ri.college10, show.values = TRUE, vline.color = 'grey', title = 'College Bound')+theme_bw()
+
+
+```
+Turning Prop HUG into a Categorical Variable
+```{r}
+#graphing box plot of hug plot
+ggplot(data = df.arm1)+
+  geom_boxplot(aes(x= factor(SURVYEAR), y=HUG_prop))+
+  theme_bw()
+
+table(df.arm1$SURVYEAR)
+table(df.arm1$STITLI_OVERALL, useNA = 'ifany')
+summary(df.arm2$HUG_prop)
+
+#creating categorical variables
+df.arm2 <- df.arm1
+df.arm2$HUG_cat[df.arm2$HUG_prop < .05] <- 1
+df.arm2$HUG_cat[ df.arm2$HUG_prop >=.05  & df.arm2$HUG_prop < .25] <- 2
+df.arm2$HUG_cat[df.arm2$HUG_prop >= .25 & df.arm2$HUG_prop < .50] <- 3
+df.arm2$HUG_cat[df.arm2$HUG_prop >= .50 & df.arm2$HUG_prop < .75] <- 4
+df.arm2$HUG_cat[df.arm2$HUG_prop >= .75 & df.arm2$HUG_prop <= 1] <- 5
+#same but with quartiles
+df.arm2$HUG_catq[df.arm2$HUG_prop < .0241] <- 1
+df.arm2$HUG_catq[ df.arm2$HUG_prop >=.0241  & df.arm2$HUG_prop < .06853] <- 2
+df.arm2$HUG_catq[df.arm2$HUG_prop >= 0.06853 & df.arm2$HUG_prop < .30710] <- 3
+df.arm2$HUG_catq[df.arm2$HUG_prop >= .30710] <- 4
+
+
+table(df.arm2$HUG_cat)
+table(df.arm2$HUG_catq)
+
+#modeling
+ri.tot.c <- lmer(total_postsecondary_bound.p ~ factor(HUG_catq) + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.arm2, REML = 0)
+
+ri.col.c <- lmer(college_bound.p ~ factor(HUG_catq) + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.arm2, REML = 0)
+
+ri.modelq <- lmer(total_postsecondary_bound.p ~ factor(HUG_catq) + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.arm2, REML = 0)
+
+summary(ri.tot.c)
+summary(ri.col.c)
+
+confint(ri.tot.c, method="profile", ## default
+                             oldNames = FALSE)
+confint(ri.col.c)
+confint(ri.col.c, method="profile", ## default
+                             oldNames = FALSE)
+
+plot_model(ri.tot.c, show.values = TRUE, vline.color = 'grey', title = 'Total Post-Secondary Bound')+theme_bw()
+plot_model(ri.col.c, show.values = TRUE, vline.color = 'grey', title = 'College Bound')+theme_bw()
+
+
+#likelihood ratio test testing the significance of categorical variable 
+#making null model
+model.0.t <- lmer(total_postsecondary_bound.p ~ SURVYEAR + STITLI_OVERALL + (1|SCHNO), df.arm2, REML =0)
+model.0.c <- lmer(college_bound.p ~ SURVYEAR + STITLI_OVERALL + (1|SCHNO), df.arm2, REML =0)
+anova(model.0.t, ri.tot.c, test = 'LRT')
+anova(model.0.c, ri.col.c, test = 'LRT')
+```
+
+
+
+Clustering the data based on race distribution
+
+```{r}
+set.seed(101)
+cluster_data <- na.omit(df.xy[,c('SCHNO',
+                                 'SURVYEAR',
+                                 'college_bound.p',
+                                 'nondegree_bound.p',
+                                 'specialized_degree_bound.p',
+                                 "total_postsecondary_bound.p",
+                                 'STITLI_OVERALL',
+                                 "HUG_prop",
+                                 'AM_all.p', 
+                                 'AS_all.p',
+                                 'HI_all.p',
+                                 'BL_all.p',
+                                 'WH_all.p',
+                                 'HP_all.p', 
+                                 'TR_all.p')]) #4431
+
+cluster_data<- unique(cluster_data[which(cluster_data$total_postsecondary_bound.p != 0),]) #4170
+cluster_data <- unique(cluster_data[which(cluster_data$SCHNO != 16),]) #4154
+cluster_data <- unique(cluster_data[which(cluster_data$SCHNO != 3848),]) #4136
+cluster_data <- unique(cluster_data[which(cluster_data$SCHNO != 941),]) #4118
+
+wss <- rep(NA,20)
+clusters <- rep(NA,20)
+for(k in 1:20){
+  a <- kmeans(x = cluster_data[,-c(1:8)], centers =  k)
+  wss[k] <- a$tot.withinss
+  clusters[k] <- k
+}
+
+ggplot()+
+  geom_point(aes(x=clusters, y=wss))+
+  theme_bw()+
+  ylab('WSS')+
+  xlab('No. of Clusters')
+
+#3,4 or 5 clusters
+k.4 <- kmeans(x = cluster_data[,-c(1:8)], centers =  4)
+k.3 <- kmeans(x = cluster_data[,-c(1:8)], centers =  3)
+k.5 <- kmeans(x = cluster_data[,-c(1:8)], centers =  5)
+
+df.4cluster <- cbind.data.frame(cluster_data, cluster = k.4$cluster) #4421
+df.allcluster <- cbind.data.frame(df.4cluster, cluster3 = k.3$cluster)
+df.allcluster <- cbind.data.frame(df.allcluster, cluster5 = k.5$cluster)
+
+df.4cluster$SURVYEAR <- unfactor(df.4cluster$SURVYEAR)
+#releveling so that cluster 4 (all white) is reference (only if all white cluster is not number1)
+df.4cluster <- within(df.4cluster, cluster <- relevel(factor(cluster), ref = 4))
+
+#looking into number of schools that fit into each 
+just.schools <- unique(cbind.data.frame(SCHNO = df.4cluster$SCHNO, cluster = df.4cluster$clust_lab))
+table(just.schools$cluster)
+prop.table(table(just.schools$cluster))*100
+# 1=403 (62%), 2=116 (17.85%), 3=104 (16%), 4=27 (4.15%) 
+
+#adding labels to cluster
+df.4cluster$clust_label[df.4cluster$cluster == 4] <- 'white'
+df.4cluster$clust_label[df.4cluster$cluster == 1] <- 'black'
+df.4cluster$clust_label[df.4cluster$cluster == 2] <- 'mix'
+df.4cluster$clust_label[df.4cluster$cluster == 3] <- 'hisp'
+
+df.4cluster$clust_label[df.4cluster$cluster == 4] <- 1
+df.4cluster$clust_label[df.4cluster$cluster == 1] <- 4
+df.4cluster$clust_label[df.4cluster$cluster == 2] <- 3
+df.4cluster$clust_label[df.4cluster$cluster == 3] <- 2
+
+df.4cluster <- within(df.4cluster, cluster <- relevel(factor(clust_label), ref = 1))
+
+
+#making long version fr graphing
+df.4clusterl <- melt(df.4cluster,
+        # ID variables - all the variables to keep but not split apart on
+    id.vars=c("SCHNO", "SURVYEAR", "cluster","clust_label"),
+        # The source columns
+    measure.vars=c("AM_all.p", "AS_all.p", "HI_all.p","BL_all.p","WH_all.p","HP_all.p","TR_all.p"),
+        # Name of the destination column that will identify the original
+        # column that the measurement came from
+    variable.name="Race",
+    value.name="Percent"
+)
+
+df.allclusterl <- melt(df.allcluster,
+        # ID variables - all the variables to keep but not split apart on
+    id.vars=c("SCHNO", "SURVYEAR", "cluster","clust_label","cluster3", "cluster5"),
+        # The source columns
+    measure.vars=c("AM_all.p", "AS_all.p", "HI_all.p","BL_all.p","WH_all.p","HP_all.p","TR_all.p"),
+        # Name of the destination column that will identify the original
+        # column that the measurement came from
+    variable.name="Race",
+    value.name="Percent"
+)
+```  
+
+
+Graphing Cluster Data
+```{r}
+
+#looking at race dsitributions by cluster
+ggplot(data = df.4clusterl)+
+  geom_bar(aes(x=Race, y=Percent),
+           stat = "summary", fun.y = "mean")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))+
+  ylab('Mean Percent')+
+  xlab('RACE')+
+  #ggtitle('Mean Percents by Race')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  facet_wrap('clust_label')    
+#3 clusters
+ggplot(data = df.allclusterl)+
+  geom_bar(aes(x=Race, y=Percent),
+           stat = "summary", fun.y = "mean")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))+
+  ylab('Mean Percent')+
+  xlab('RACE')+
+  #ggtitle('Mean Percents by Race')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  facet_wrap('cluster3')  
+
+#5 clusters
+ggplot(data = df.allclusterl)+
+  geom_bar(aes(x=Race, y=Percent),
+           stat = "summary", fun.y = "mean")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))+
+  ylab('Mean Percent')+
+  xlab('RACE')+
+  #ggtitle('Mean Percents by Race')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  facet_wrap('cluster5') 
+
+ggplot(data = df.4clusterl)+
+  geom_bar(aes(x=Race, y=Percent),
+           stat = "summary", fun.y = "var")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))+
+  ylab('Variance of Percent')+
+  xlab('RACE')+
+  scale_x_discrete(labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  facet_wrap('clust_label')    
+ 
+
+
+#lookng at percent hug by cluster
+ggplot(df.4cluster, aes(clust_label, HUG_prop)) +
+  stat_summary(fun.y=mean, geom="bar")+
+  theme_bw()+
+  xlab('Cluster')+
+  ylab('Mean Percent HUG')
+
+ggplot(df.4cluster, aes(clust_label, HUG_prop)) +
+  stat_summary(fun.y=var, geom="bar")+
+  theme_bw()+
+  xlab('Cluster')+
+  ylab('Variance Percent HUG')
+#looking at Title I status by cluster
+ggplot(data = df.4cluster)+
+  geom_bar(aes(x=STITLI_OVERALL, stat = 'count'), col = 'white')+
+  theme_bw()+
+  facet_wrap('clust_label')
+
+#looking post-secondary bound rates by cluster
+ggplot(data = df.4cluster)+
+  geom_histogram(aes(x=total_postsecondary_bound.p), col = 'white', binwidth = 5)+
+  theme_bw()+
+  xlab('Total Post-Secondary Bound Rate')+
+  facet_wrap('clust_label')
+  
+ggplot(data = df.4cluster)+
+  geom_histogram(aes(x=college_bound.p), col = 'white', binwidth = 5)+
+  theme_bw()+
+  xlab('College Bound Rate')+
+  facet_wrap('clust_label')
+
+ggplot(data = df.4cluster)+
+  geom_bar(aes(x=clust_label, y=total_postsecondary_bound.p),
+           stat = "summary", fun.y = "mean")+
+  theme_bw()+
+  #theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4))+
+  ylab('Mean Percent')+
+  xlab('Cluster')#+
+  #ggtitle('Post-Secondary bound percent by cluster')
+
+ggplot(data = df.4cluster)+
+  geom_bar(aes(x=clust_label, y=total_postsecondary_bound.p),
+           stat = "summary", fun.y = "var")+
+  theme_bw()+
+  #theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4))+
+  ylab('Variance of Percent')+
+  xlab('Cluster')#+
+  #ggtitle('Post-Secondary bound percent by cluster')
+```
+
+3d plot for clusters
+```{r}
+#aggregating for mean race by school
+df.4clusterm<- (aggregate(x = df.4cluster, 
+                   by = list(unique.values = df.4cluster$SCHNO), 
+                   FUN = mean))
+#using mode
+#making mode function
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+df.4clusterMode <- (aggregate(x = df.4cluster, 
+                   by = list(unique.values = df.4cluster$SCHNO), 
+                   FUN = Mode))
+df.4clusterm$clust_label2 <- df.4clusterMode$clust_label
+
+fig <- plot_ly(data = df.4clusterm, x = ~WH_all.p, y = ~BL_all.p , z = ~HI_all.p, type = 'scatter3d', mode = "markers", color= ~ as.factor(clust_label2), size = 2, colors = c('#4AC6B7', '#1972A4', '#965F8A', '#FF7070'))
+
+#fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title='Proportion White'),
+                                   yaxis = list(title = 'Proportion Black'),
+                                   zaxis = list(title = 'Proportion Hispanic')),
+                       #paper_bgcolor = 'rgb(243, 243, 243)',
+                       #plot_bgcolor = 'rgb(243, 243, 243)',
+                       annotations = list(
+                        x = 1.1,
+                        y = 1.05,
+                        text = 'Cluster',
+                        xref = 'paper',
+                        yref = 'paper',
+                        showarrow = FALSE
+                        ))
+fig
+
+#looking at how many schools in each cluster
+table(df.4clusterm$clust_label2)
+prop.table(table(df.4clusterm$clust_label2))*100
+```
+
+
+
+Modeling Cluster Data
+```{r}
+#modeling the 4 cluster data
+#df.4cluster$SURVYEAR <- unfactor(df.4cluster$SURVYEAR)
+#setting no title 1 status a reference
+df.4cluster <- within(df.4cluster, STITLI_OVERALL <- relevel(factor(STITLI_OVERALL), ref = 2))
+ri.model.cb <- lmer(college_bound.p ~ factor(clust_label) + SURVYEAR + factor(STITLI_OVERALL) +(1|SCHNO), df.4cluster, REML = 0)
+
+ri.model.psb <- lmer(total_postsecondary_bound.p ~ factor(cluster) + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.4cluster, REML = 0)
+
+ri.model.sdb <- lmer(specialized_degree_bound.p ~ factor(cluster) + SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.4cluster, REML = 0)
+
+
+
+summary(ri.model.cb)
+confint(ri.model.cb)
+summary(ri.model.psb)
+confint(ri.model.psb)
+summary(ri.model.sdb)
+
+#plotting coefficients 
+plot_model(ri.model.psb, show.values = TRUE, vline.color = 'grey', title = 'Total Post-Secondary Bound')+theme_bw()
+plot_model(ri.model.cb, show.values = TRUE, vline.color = 'grey', title = 'College Bound')+theme_bw()
+
+#likelihood ratio tests to test overall significance of clusters
+model.0c.t <- lmer(total_postsecondary_bound.p ~SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.4cluster, REML = 0)
+model.0c.c <- lmer(college_bound.p ~SURVYEAR +STITLI_OVERALL  + (1|SCHNO), df.4cluster, REML = 0)
+
+anova(model.0c.t, ri.model.psb, test = 'LRT')
+anova(model.0c.c, ri.model.cb, test = 'LRT')
+```
+
+
+```{r}
+ggplot(data = df.xyl[df.xyl$SCHNAM == 'SCHENLEY HS'])+
+  geom_bar(aes(x=Race, y=Percent),
+           stat = "summary", fun.y = "mean")+
+  theme_bw()+
+  #theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4))+
+  ylab('Percent')+
+  xlab('RACE')+
+  ggtitle('Race Distribution-SCHENLEY HIGH')
+
+```
+
+Race distribution in depth by cluster
+```{r}
+ggplot(data = df.4clusterl[df.4clusterl$clust_label == 2])+
+  geom_histogram(aes(x=Percent))+
+  theme_bw()+
+  facet_wrap('Race')
+
+ggplot(data = df.4clusterl[df.4clusterl$clust_label == 'white'])+
+  geom_histogram(aes(x=Percent))+
+  theme_bw()+
+  facet_wrap('Race')
+
+ggplot(data = df.4clusterl[df.4clusterl$clust_label == 'hisp'])+
+  geom_histogram(aes(x=Percent))+
+  theme_bw()+
+  facet_wrap('Race')
+
+ggplot(data = df.4clusterl[df.4clusterl$clust_label == 'mix'])+
+  geom_histogram(aes(x=Percent))+
+  theme_bw()+
+  facet_wrap('Race')
+
+```
+
+Figure 2 race/ethnicity mean/ var prop
+```{r}
+#creating summary data set of long data 
+df.dev.r$Percent = df.dev.r$Percent*100
+df.dev.r.summary <- df.dev.r %>% # the names of the new data frame and the data frame to be summarised
+  group_by(Race,SURVYEAR) %>%   # the grouping variable
+  summarise(mean_Percent = mean(Percent),  # calculates the mean of each group
+            sd_Percent = sd(Percent), # calculates the standard deviation of each group
+            n_Percent = n(),  # calculates the sample size per group
+            SE_Percent = sd(Percent)/sqrt(n())) # calculates the standard error of each group
+
+#line plot with error bars (too much clutter)
+ggplot(df.dev.l.summary, aes(x = unfactor(SURVYEAR), y=mean_Percent, color = factor(Race)))+
+  geom_line(stat = "identity")+
+  geom_errorbar(aes(ymin = mean_Percent - sd_Percent, ymax = mean_Percent + sd_Percent), width = 0.2, alpha = 0.3) +
+  theme_bw()+
+  scale_color_discrete(name = 'Race/Ethnicity',labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  xlab('School Year')+
+  scale_x_continuous(n.breaks = 7)
+
+#no error bars (mean)
+ggplot(df.dev.l.summary, aes(x = unfactor(SURVYEAR), y=mean_Percent, color = factor(Race)))+
+  geom_line(stat = "identity")+
+  theme_bw()+
+  scale_color_discrete(name = 'Race/Ethnicity',labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  xlab('School Year')+
+  scale_x_continuous(n.breaks = 7)+
+  ylab('Overall Mean Percent of Students')
+
+#no error bars (sd)
+ggplot(df.dev.l.summary, aes(x = unfactor(SURVYEAR), y=sd_Percent, color = factor(Race)))+
+  geom_line(stat = "identity")+
+  theme_bw()+
+  scale_color_discrete(name = 'Race/Ethnicity',labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  xlab('School Year')+
+  scale_x_continuous(n.breaks = 7)+
+  ylab('Standard Deviation of Percent')
+
+#old version of plot
+ggplot(df.dev.l, aes(x = unfactor(SURVYEAR), y=Percent, color = factor(Race)))+
+  geom_line(stat = "summary", fun ="mean")+
+  geom_segment(aes(x = unfactor(SURVYEAR),
+                   y = Low, yend = High), hjust = 4) +
+  theme_bw()+
+  scale_color_discrete(name = 'Race/Ethnicity',labels=c("AM_all.p" = "American Indian", 
+                            "AS_all.p" = "Asian",
+                            "WH_all.p" = "White",
+                            "BL_all.p"="Black",
+                            "HI_all.p" = "Hispanic",
+                            "HP_all.p" = "Hawaiian/Pacific Islander",
+                            "TR_all.p"="Two or More Races"))+
+  xlab('School Year')+
+  scale_x_continuous(n.breaks = 7)
+
+ 
+
+```
+
+Summary Stats by Year Table
+```{r}
+#creating summary data set of long data 
+df.dev.l$Percent = df.dev.l$Percent*100
+df.dev.l.summary <- df.dev.l %>% # the names of the new data frame and the data frame to be summarised
+  group_by(Race,SURVYEAR) %>%   # the grouping variable
+  summarise(mean_Percent = mean(Percent),  # calculates the mean of each group
+            sd_Percent = sd(Percent), # calculates the standard deviation of each group
+            n_Percent = n(),  # calculates the sample size per group
+            SE_Percent = sd(Percent)/sqrt(n())) # calculates the standard error of each group
+
+```
+
+Summary Stats of Clusters 
+```{r}
+
+#making long version of cluster data
+df.4clusterl.all <- melt(df.4cluster,
+        # ID variables - all the variables to keep but not split apart on
+    id.vars=c("SCHNO", "SURVYEAR", "cluster","clust_label"),
+        # The source columns
+    measure.vars=c("AM_all.p", "AS_all.p", "HI_all.p","BL_all.p","WH_all.p","HP_all.p","TR_all.p", 'HUG_prop', 'STITLI_OVERALL', 'college_bound.p', 'total_postsecondary_bound.p'  ),
+        # Name of the destination column that will identify the original
+        # column that the measurement came from
+    variable.name="Var",
+    value.name="Percent"
+)
+
+#summarizing everything
+df.4clusterl.all$Percent = df.dev.l$Percent*100
+df.4clusterl.summary <- df.4clusterl.all %>% # the names of the new data frame and the data frame to be summarised
+  group_by(Var,clust_label) %>%   # the grouping variable
+  summarise(mean_Percent = mean(Percent),  # calculates the mean of each group
+            sd_Percent = sd(Percent), # calculates the standard deviation of each group
+            n_Percent = n(),  # calculates the sample size per group
+            SE_Percent = sd(Percent)/sqrt(n())) # calculates the standard error of each group
+
+
+```
+
+
+
+
+
+
+Spaghetti Plots
+```{r}
+p <- ggplot(data = df.4cluster, aes(x = SURVYEAR, y = total_postsecondary_bound.p, group = SCHNO))
+p+geom_line(aes(col = factor(clust_label)),alpha = 0.3)+
+  facet_wrap('STITLI_OVERALL')+theme_bw()
+
+```
+
+
+Univariate Plots
+```{r}
+test <- lmer(total_postsecondary_bound.p ~ HUG_percent + (1|SCHNO), df.arm1, REML = 0)
+summary(test)
+
+test <- lmer(total_postsecondary_bound.p ~ STITLI_OVERALL+ (1|SCHNO), df.arm1, REML = 0)
+summary(test)
+
+test <- lmer(total_postsecondary_bound.p ~ SURVYEAR + (1|SCHNO), df.arm1, REML = 0)
+summary(test)
+```
+
+```{r ref.label=knitr::all_labels()}
+```
